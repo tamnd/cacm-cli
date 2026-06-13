@@ -1,0 +1,10 @@
+title       = "cacm"
+baseURL     = "https://cacm-cli.tamnd.com/"
+description = "Read Communications of the ACM articles and blogs"
+contentDir  = "content"
+outputDir   = "public"
+theme       = "tago-doks"
+syntaxHighlight = "true"
+
+[params]
+github = "https://github.com/tamnd/cacm-cli"
