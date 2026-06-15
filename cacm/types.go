@@ -20,6 +20,7 @@ type Article struct {
 type Section struct {
 	Rank int    `json:"rank"`
 	Name string `json:"name"`
+	Slug string `json:"slug"`
 	URL  string `json:"url"`
 }
 
@@ -180,7 +181,8 @@ func stripTags(s string) string {
 
 // knownSections is the canonical list of CACM feed sections.
 var knownSections = []Section{
-	{Rank: 1, Name: "top", URL: "https://cacm.acm.org/feed/"},
-	{Rank: 2, Name: "blogs", URL: "https://cacm.acm.org/blogs/feed/"},
-	{Rank: 3, Name: "magazine", URL: "https://cacm.acm.org/magazines/feed/"},
+	{Rank: 1, Name: "Top Articles", Slug: "top", URL: "https://cacm.acm.org/feed/"},
+	{Rank: 2, Name: "Blogs", Slug: "blogs", URL: "https://cacm.acm.org/blogs/feed/"},
+	{Rank: 3, Name: "Magazine", Slug: "magazine", URL: "https://cacm.acm.org/magazines/feed/"},
+	{Rank: 4, Name: "ACM TechNews", Slug: "technews", URL: "https://technews.acm.org/feed/"},
 }
