@@ -72,8 +72,14 @@ func NewClient(cfg Config) *Client {
 // Feed fetches the RSS/Atom feed at path (e.g. "/feed/") relative to BaseURL
 // and returns up to limit Article records. limit=0 returns all items.
 func (c *Client) Feed(ctx context.Context, path string, limit int) ([]Article, error) {
-	u := c.baseURL + path
-	body, err := c.get(ctx, u)
+	return c.FeedURL(ctx, c.baseURL+path, limit)
+}
+
+// FeedURL fetches the RSS/Atom feed at an absolute URL and returns up to limit
+// Article records. limit=0 returns all items. Use this for feeds whose base
+// URL differs from cfg.BaseURL (e.g. ACM TechNews at technews.acm.org).
+func (c *Client) FeedURL(ctx context.Context, feedURL string, limit int) ([]Article, error) {
+	body, err := c.get(ctx, feedURL)
 	if err != nil {
 		return nil, err
 	}

@@ -210,19 +210,168 @@ func TestFeedEmpty(t *testing.T) {
 
 func TestKnownSections(t *testing.T) {
 	secs := KnownSections()
-	if len(secs) != 3 {
-		t.Fatalf("got %d sections, want 3", len(secs))
+	if len(secs) != 4 {
+		t.Fatalf("got %d sections, want 4", len(secs))
 	}
-	for _, s := range secs {
+	for i, s := range secs {
 		if s.Name == "" {
-			t.Error("section has empty name")
+			t.Errorf("sections[%d] has empty Name", i)
+		}
+		if s.Slug == "" {
+			t.Errorf("sections[%d] %q has empty Slug", i, s.Name)
 		}
 		if s.URL == "" {
-			t.Errorf("section %q has empty URL", s.Name)
+			t.Errorf("sections[%d] %q has empty URL", i, s.Name)
 		}
-		if s.Rank == 0 {
-			t.Errorf("section %q has zero rank", s.Name)
+		if s.Rank != i+1 {
+			t.Errorf("sections[%d] Rank=%d, want %d", i, s.Rank, i+1)
 		}
+	}
+	// technews uses a different base domain
+	techNews := secs[3]
+	if techNews.Slug != "technews" {
+		t.Errorf("secs[3].Slug=%q, want technews", techNews.Slug)
+	}
+	if !strings.Contains(techNews.URL, "technews.acm.org") {
+		t.Errorf("technews URL=%q, want technews.acm.org", techNews.URL)
+	}
+}
+
+func TestFeedLimitZero(t *testing.T) {
+	// limit=0 must return all items in the feed.
+	body := fakeRSS(sampleRSSItem, sampleRSSItem, sampleRSSItem)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(body))
+	})
+	arts, err := c.Feed(context.Background(), "/feed/", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(arts) != 3 {
+		t.Errorf("got %d articles with limit=0, want 3", len(arts))
+	}
+}
+
+func TestFeedURL(t *testing.T) {
+	// FeedURL uses an absolute URL, ignoring BaseURL.
+	body := fakeRSS(sampleRSSItem)
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	cfg := DefaultConfig()
+	cfg.BaseURL = "http://should-not-be-used.invalid"
+	cfg.Rate = 0
+	cfg.Retries = 0
+	c := NewClient(cfg)
+	arts, err := c.FeedURL(context.Background(), srv.URL+"/technews/feed/", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(arts) != 1 {
+		t.Fatalf("got %d articles, want 1", len(arts))
+	}
+	if gotPath != "/technews/feed/" {
+		t.Errorf("server saw path %q, want /technews/feed/", gotPath)
+	}
+}
+
+func TestFeedRSSAuthorFallback(t *testing.T) {
+	// When dc:creator is absent, <author> should be used.
+	item := `<item>
+<title>Fallback Author Article</title>
+<link>https://cacm.acm.org/test/</link>
+<pubDate>Sat, 14 Jun 2026 10:00:00 +0000</pubDate>
+<author>fallback@example.com (Fallback Author)</author>
+<description>Test description.</description>
+</item>`
+	body := fakeRSS(item)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(body))
+	})
+	arts, err := c.Feed(context.Background(), "/feed/", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(arts) != 1 {
+		t.Fatalf("got %d articles, want 1", len(arts))
+	}
+	if arts[0].Author == "" {
+		t.Error("expected non-empty author from <author> fallback")
+	}
+}
+
+func TestFeedHTMLEntities(t *testing.T) {
+	// HTML entities in title and description should be decoded.
+	item := `<item>
+<title>S&amp;P 500 &lt;Rises&gt;</title>
+<link>https://cacm.acm.org/test/</link>
+<pubDate>Sat, 14 Jun 2026 10:00:00 +0000</pubDate>
+<dc:creator>Jane Smith</dc:creator>
+<description>Index rose &quot;quickly&quot; says &#39;source&#39;.</description>
+</item>`
+	body := fakeRSS(item)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(body))
+	})
+	arts, err := c.Feed(context.Background(), "/feed/", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if arts[0].Title != "S&P 500 <Rises>" {
+		t.Errorf("title = %q", arts[0].Title)
+	}
+}
+
+func TestAtomFallbackURL(t *testing.T) {
+	// Atom entry with no <link> should use <id> as URL.
+	entry := `<entry>
+<title>No Link Entry</title>
+<id>https://cacm.acm.org/fallback-id/</id>
+<published>2026-06-14T10:00:00Z</published>
+<author><name>Test Author</name></author>
+<summary>Summary text.</summary>
+</entry>`
+	body := fakeAtom(entry)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(body))
+	})
+	arts, err := c.Feed(context.Background(), "/feed/", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(arts) != 1 {
+		t.Fatalf("got %d articles, want 1", len(arts))
+	}
+	if !strings.Contains(arts[0].URL, "fallback-id") {
+		t.Errorf("URL fallback to <id> not used: %q", arts[0].URL)
+	}
+}
+
+func TestAtomUpdatedFallback(t *testing.T) {
+	// When <published> is absent, <updated> should be used for date.
+	entry := `<entry>
+<title>Updated Only Entry</title>
+<link href="https://cacm.acm.org/updated-only/" rel="alternate"/>
+<updated>2026-06-14T10:00:00Z</updated>
+<author><name>Test Author</name></author>
+<summary>Summary text.</summary>
+</entry>`
+	body := fakeAtom(entry)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(body))
+	})
+	arts, err := c.Feed(context.Background(), "/feed/", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(arts) != 1 {
+		t.Fatalf("got %d articles, want 1", len(arts))
+	}
+	if arts[0].Published != "2026-06-14 10:00" {
+		t.Errorf("published = %q, want 2026-06-14 10:00", arts[0].Published)
 	}
 }
 

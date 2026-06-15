@@ -91,6 +91,7 @@ Computing Machinery.`,
 		app.feedCmd("top", "Latest CACM articles from main feed", "/feed/", 20),
 		app.feedCmd("blogs", "CACM blog posts and opinion pieces", "/blogs/feed/", 20),
 		app.feedCmd("magazine", "CACM magazine articles", "/magazines/feed/", 20),
+		app.techNewsCmd(),
 		app.sectionsCmd(),
 		newVersionCmd(),
 	)
